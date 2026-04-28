@@ -1,0 +1,21 @@
+#!/bin/bash
+# ResearchMind — start all services
+
+echo "🧠 ResearchMind"
+echo ""
+echo "Run each in a separate terminal:"
+echo ""
+echo "  Terminal 1 — MCP Servers"
+echo "  ─────────────────────────"
+echo "  cd python-agents && python3 start_mcp_servers.py"
+echo ""
+echo "  Terminal 2 — Python Agent Server (port 3738)"
+echo "  ─────────────────────────────────────────────"
+echo "  cd python-agents && python3 server.py"
+echo ""
+echo "  Terminal 3 — Chrome Extension (dev)"
+echo "  ─────────────────────────────────────"
+echo "  npm run dev"
+echo ""
+echo "Then: chrome://extensions → Load unpacked → build/chrome-mv3-dev"
+echo "Research notes saved to: ~/ResearchMind/"

@@ -1,39 +1,42 @@
+# Dependencies
+node_modules/
+python-agents/__pycache__/
+python-agents/agents/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
 
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# testing
-/coverage
-
-#cache
-.turbo
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# local env files
-.env*
-
-out/
+# Build output
 build/
 dist/
+out/
+.plasmo/
 
-# plasmo - https://www.plasmo.com
-.plasmo
-
-# bpp - http://bpp.browser.market/
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.pem
 keys.json
 
-# typescript
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+*.log
+
+# TypeScript
 .tsbuildinfo
+
+# Research data (user-generated, not source code)
+~/ResearchMind/
+
+# Plasmo cache
+.turbo
