@@ -1,7 +1,7 @@
 # Dependencies
 node_modules/
-python-agents/__pycache__/
-python-agents/agents/__pycache__/
+agents/__pycache__/
+agents/agents/__pycache__/
 *.pyc
 *.pyo
 *.pyd

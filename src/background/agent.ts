@@ -23,7 +23,7 @@ export async function processPage(payload: {
   try {
     await fetch(`${PYTHON}/health`, { signal: AbortSignal.timeout(2000) })
   } catch {
-    console.warn("[ResearchMind] Python agent not running. Start: python3 python-agents/server.py")
+    console.warn("[ResearchMind] Python agent not running. Start: python3 agents/server.py")
     return null
   }
 

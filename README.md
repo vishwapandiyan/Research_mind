@@ -233,7 +233,7 @@ cd Research_mind
 npm install
 
 # Python agents
-cd python-agents
+cd agents
 pip install -r requirements.txt
 ```
 
@@ -242,7 +242,7 @@ pip install -r requirements.txt
 ### 2 — Start MCP servers
 
 ```bash
-cd python-agents
+cd agents
 python3 start_mcp_servers.py
 ```
 
@@ -254,7 +254,7 @@ Starts `basic-memory` on `:8765` and `filesystem` on `:8766`. Keep this terminal
 
 ```bash
 # new terminal
-cd python-agents
+cd agents
 python3 server.py
 ```
 

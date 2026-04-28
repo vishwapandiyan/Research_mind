@@ -126,7 +126,7 @@ function Popup() {
       </div>
       {agentOk === false && (
         <div style={s.warning}>
-          <code style={s.code}>python3 python-agents/server.py</code>
+          <code style={s.code}>python3 agents/server.py</code>
         </div>
       )}
 
