@@ -226,8 +226,8 @@ Coordinates the pipeline: ExtractorAgent → GraphAgent in sequence, then fires 
 ### 1 — Clone and install
 
 ```bash
-git clone https://github.com/your-username/researchmind.git
-cd researchmind
+git clone https://github.com/vishwapandiyan/Research_mind.git
+cd Research_mind
 
 # Extension
 npm install
