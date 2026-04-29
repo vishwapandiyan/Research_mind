@@ -159,12 +159,9 @@ Name your research sessions ("CRISPR research", "Climate policy"), export the fu
 
 Two MCP servers run locally and are used by the agents via `langchain-mcp-adapters`.
 
-### basic-memory — semantic memory store
+### basic-memory — replaced by RAG vector store
 
-| Tool | Used by | What it does |
-|---|---|---|
-| `search_notes` | ExtractorAgent, GraphAgent | RAG retrieval — searches prior knowledge before analyzing a new page |
-| `write_note` | ExtractorAgent, MemoryAgent | Stores entity profiles and page summaries for future recall |
+Memory and recall are now handled by ChromaDB + embeddings (`rag.py`). The `basic-memory` MCP server is no longer required.
 
 ### filesystem — structured note persistence
 
@@ -204,17 +201,77 @@ Coordinates the pipeline: ExtractorAgent → GraphAgent in sequence, then fires 
 
 ## RAG — Retrieval-Augmented Generation
 
-Every page is analyzed in the context of what ResearchMind already knows. Before the LLM extracts anything, the ExtractorAgent calls `search_notes` on the memory MCP server to retrieve semantically similar prior knowledge.
+Every page is analyzed in the context of what ResearchMind already knows. Before the LLM extracts anything, the ExtractorAgent performs a vector similarity search over all previously indexed research.
 
-This retrieved context is injected directly into the LLM prompt — making every extraction RAG-augmented:
+### How it works
 
 ```
-Page content  +  Retrieved memory  →  LLM  →  Grounded extraction
+Page arrives
+     │
+     ▼
+RAG Recall — embed query → ChromaDB similarity search → top-5 chunks
+     │
+     ▼
+Augmented prompt = page content + retrieved prior context
+     │
+     ▼
+LLM extraction — grounded in what was already known
+     │
+     ▼
+RAG Store — chunk page → embed → upsert into ChromaDB (async)
 ```
 
-The result: contradictions are detected because the agent sees the conflicting prior claim. Patterns emerge because the agent recognizes the same entity appearing across sources. Without RAG, every page would be analyzed in isolation.
+### What gets stored
 
-The `basic-memory` MCP server handles semantic indexing and retrieval. Entity profiles are stored with consistent naming (`entity:{name}`) so they can be found across sessions.
+Each page is stored as multiple document types in ChromaDB:
+
+| Document type | Content | Purpose |
+|---|---|---|
+| `page` | Full text, chunked at 600 chars with 100-char overlap | Broad semantic recall |
+| `summary` | Agent-generated 2-3 sentence summary | Fast high-level recall |
+| `entity` | `{name} ({type}): {description}. Source: {url}` | Entity-specific lookup |
+
+### Retrieval
+
+Queries use cosine similarity. Retrieved chunks include relevance scores and source attribution:
+
+```
+[1] From arxiv.org (2024-01-15) — "CRISPR Applications":
+CRISPR-Cas9 has been shown to achieve 94% efficiency in...
+Relevance: 0.82
+
+[2] From nature.com (2024-01-10) — "Gene Editing Review":
+...
+```
+
+Chunks below 0.30 similarity are discarded. The top 5 chunks are injected into the LLM prompt.
+
+### Embedding models
+
+| Provider | Model | Dimensions | Notes |
+|---|---|---|---|
+| Ollama (default) | `nomic-embed-text` | 768 | Local, free, fast |
+| OpenAI | `text-embedding-3-small` | 1536 | Better quality, requires API key |
+
+Set `RESEARCHMIND_PROVIDER=openai` to use OpenAI embeddings.
+
+### Vector store
+
+ChromaDB persists to `~/ResearchMind/.chroma`. No server required — it runs in-process.
+
+```bash
+# Check how many chunks are indexed
+curl http://localhost:3738/rag/stats
+
+# Clear the vector store (resets all research memory)
+curl -X POST http://localhost:3738/rag/clear
+```
+
+### Setup — pull the embedding model
+
+```bash
+ollama pull nomic-embed-text
+```
 
 ---
 
@@ -335,7 +392,17 @@ pip install -r requirements.txt
 
 ---
 
-### 2 — Start MCP servers
+### 2 — Pull the embedding model
+
+```bash
+ollama pull nomic-embed-text
+```
+
+This is the local embedding model used by the RAG vector store. Skip if using OpenAI embeddings.
+
+---
+
+### 3 — Start MCP servers
 
 ```bash
 cd agents
@@ -346,7 +413,7 @@ Starts `basic-memory` on `:8765` and `filesystem` on `:8766`. Keep this terminal
 
 ---
 
-### 3 — Start the Python agent server
+### 4 — Start the Python agent server
 
 ```bash
 # new terminal
@@ -362,7 +429,7 @@ INFO: Uvicorn running on http://127.0.0.1:3738
 
 ---
 
-### 4 — Start Ollama (local LLM only)
+### 5 — Start Ollama (local LLM only)
 
 ```bash
 # new terminal — skip if using OpenAI or Anthropic
@@ -372,7 +439,7 @@ ollama pull qwen3:8b
 
 ---
 
-### 5 — Build and load the extension
+### 6 — Build and load the extension
 
 ```bash
 # new terminal, from researchmind root
@@ -387,7 +454,7 @@ Then in Chrome:
 
 ---
 
-### 6 — Configure your LLM
+### 7 — Configure your LLM
 
 Click the ResearchMind icon in the Chrome toolbar:
 
@@ -405,7 +472,7 @@ Get keys here:
 
 ---
 
-### 7 — Start researching
+### 8 — Start researching
 
 1. Click **Open Dashboard** in the popup
 2. Browse any research page — Wikipedia, arXiv, news articles, documentation

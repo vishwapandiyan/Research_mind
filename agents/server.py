@@ -24,6 +24,7 @@ from agents.synthesis_agent import run_synthesis_agent
 from llm import set_config, get_config
 from guardrails import InputValidationError
 from observability import log_requests, metrics
+from rag import retriever
 
 
 @asynccontextmanager
@@ -74,6 +75,20 @@ async def health():
 async def get_metrics():
     """Pipeline metrics — pages processed, entities extracted, error counts."""
     return metrics.snapshot()
+
+
+@app.get("/rag/stats")
+async def rag_stats():
+    """RAG vector store stats — total chunks indexed."""
+    count = await retriever.count()
+    return {"chunks_indexed": count, "store": "chromadb", "embedding": "nomic-embed-text"}
+
+
+@app.post("/rag/clear")
+async def rag_clear():
+    """Clear the RAG vector store. Use with caution — deletes all indexed research."""
+    await retriever.clear()
+    return {"ok": True, "message": "Vector store cleared"}
 
 
 @app.post("/config")

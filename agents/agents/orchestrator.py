@@ -76,10 +76,10 @@ async def _process(payload: dict) -> dict:
         relationships = relationships + extra_relationships
         print(f"[Orchestrator]   ✓ +{len(extra_relationships)} inferred relationships")
 
-    # ── Stage 3: Memory store (fire-and-forget) ───────────────────────────────
-    # Stores enriched result so future pages can recall it
+    # ── Stage 3: RAG store (fire-and-forget) ─────────────────────────────────
+    # Embeds and indexes the full page in ChromaDB for future retrieval
     asyncio.create_task(
-        _safe_memory_store(url, title, summary, entities)
+        _safe_memory_store(url, title, summary, entities, text)
     )
 
     print(f"[Orchestrator] ✅ Done — {len(entities)} entities, {len(insights)} insights total\n")
@@ -124,12 +124,12 @@ async def _process(payload: dict) -> dict:
     }
 
 
-async def _safe_memory_store(url: str, title: str, summary: str, entities: list) -> None:
-    """Fire-and-forget memory write — errors are swallowed so they don't block the pipeline."""
+async def _safe_memory_store(url: str, title: str, summary: str, entities: list, full_text: str = "") -> None:
+    """Fire-and-forget RAG store — embeds and indexes the page in ChromaDB."""
     try:
         await asyncio.wait_for(
-            memory_store(url, title, summary, entities),
-            timeout=10.0
+            memory_store(url, title, summary, entities, full_text),
+            timeout=15.0
         )
     except Exception as e:
         print(f"[Orchestrator] Memory store skipped: {e}")
