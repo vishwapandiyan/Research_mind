@@ -13,6 +13,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/LangChain-ReAct_Agents-blue?style=flat-square" />
   <img src="https://img.shields.io/badge/MCP-basic--memory_%2B_filesystem-purple?style=flat-square" />
+  <img src="https://img.shields.io/badge/RAG-semantic_recall-orange?style=flat-square" />
+  <img src="https://img.shields.io/badge/Guardrails-input_%2B_output-red?style=flat-square" />
   <img src="https://img.shields.io/badge/LLM-Ollama_%7C_GPT--4o_%7C_Claude-green?style=flat-square" />
   <img src="https://img.shields.io/badge/Chrome-Manifest_V3-yellow?style=flat-square" />
 </p>
@@ -43,11 +45,12 @@ ResearchMind builds the picture.
 
 For every page you visit, a multi-agent pipeline:
 
-1. **Recalls** what it already knows about this topic from memory
+1. **Recalls** what it already knows about this topic from memory (RAG)
 2. **Extracts** entities, claims, and relationships — informed by prior context
 3. **Cross-references** each entity against stored knowledge to find contradictions and patterns
-4. **Persists** structured notes and entity profiles for future recall
-5. **Updates** a live knowledge graph and insight feed in the dashboard
+4. **Validates** all inputs and outputs through guardrails before saving
+5. **Persists** structured notes and entity profiles for future recall
+6. **Updates** a live knowledge graph and insight feed in the dashboard
 
 ---
 
@@ -58,12 +61,14 @@ Most tools summarize pages. ResearchMind connects them.
 | | ResearchMind | Notion AI | Readwise | Browser bookmarks |
 |---|---|---|---|---|
 | Reads pages automatically | ✅ | ❌ | ❌ | ❌ |
-| Cross-page memory | ✅ | ❌ | ❌ | ❌ |
+| Cross-page memory (RAG) | ✅ | ❌ | ❌ | ❌ |
 | Detects contradictions | ✅ | ❌ | ❌ | ❌ |
 | Knowledge graph visualization | ✅ | ❌ | ❌ | ❌ |
 | Runs fully local | ✅ | ❌ | ❌ | ✅ |
 | Multi-agent ReAct pipeline | ✅ | ❌ | ❌ | ❌ |
 | MCP tool integration | ✅ | ❌ | ❌ | ❌ |
+| Input + output guardrails | ✅ | ❌ | ❌ | ❌ |
+| Structured observability | ✅ | ❌ | ❌ | ❌ |
 | Works across sessions | ✅ | ✅ | ✅ | ✅ |
 
 The key difference: every insight is grounded in **what you have already read**. Contradictions name the conflicting source. Patterns reference at least two sources by name. The agent knows what it knows before it reads anything new.
@@ -123,9 +128,10 @@ Name your research sessions ("CRISPR research", "Climate policy"), export the fu
 ┌─────────────────────────────────────────────────────┐
 │           Python Agent Server  :3738                 │
 │                                                      │
+│  Guardrails (input validation)                       │
 │  OrchestratorAgent                                   │
-│  ├── ExtractorAgent (ReAct)                          │
-│  │     ├── [MCP] search_notes  ← recall memory      │
+│  ├── ExtractorAgent (ReAct + RAG)                    │
+│  │     ├── [MCP] search_notes  ← RAG recall         │
 │  │     ├── LLM  ← extract entities + insights       │
 │  │     ├── [MCP] write_file   ← persist note        │
 │  │     └── [MCP] write_note   ← store entities      │
@@ -136,12 +142,15 @@ Name your research sessions ("CRISPR research", "Climate policy"), export the fu
 │  │                                                   │
 │  └── MemoryAgent (async)                             │
 │        └── [MCP] write_note   ← store page summary  │
+│                                                      │
+│  Guardrails (output validation)                      │
+│  Observability (structured logs + trace + metrics)   │
 └──────────────────────┬──────────────────────────────┘
                        │
           ┌────────────┴────────────┐
           ▼                         ▼
   basic-memory :8765         filesystem :8766
-  (semantic recall)          (note persistence)
+  (semantic recall / RAG)    (note persistence)
 ```
 
 ---
@@ -154,7 +163,7 @@ Two MCP servers run locally and are used by the agents via `langchain-mcp-adapte
 
 | Tool | Used by | What it does |
 |---|---|---|
-| `search_notes` | ExtractorAgent, GraphAgent | Searches prior knowledge before analyzing a new page |
+| `search_notes` | ExtractorAgent, GraphAgent | RAG retrieval — searches prior knowledge before analyzing a new page |
 | `write_note` | ExtractorAgent, MemoryAgent | Stores entity profiles and page summaries for future recall |
 
 ### filesystem — structured note persistence
@@ -172,7 +181,7 @@ Two MCP servers run locally and are used by the agents via `langchain-mcp-adapte
 ### ExtractorAgent `ReAct`
 The core per-page agent. Runs for every page the user visits. Its system prompt drives a 4-step loop:
 
-1. **Recall** — searches memory for prior context on this topic before reading anything
+1. **Recall** — searches memory for prior context on this topic before reading anything (RAG)
 2. **Analyze** — extracts entities, relationships, and insights informed by what it already knows
 3. **Persist** — writes a structured note to the filesystem MCP
 4. **Remember** — stores entity profiles in memory so future pages can find them
@@ -193,6 +202,90 @@ Coordinates the pipeline: ExtractorAgent → GraphAgent in sequence, then fires 
 
 ---
 
+## RAG — Retrieval-Augmented Generation
+
+Every page is analyzed in the context of what ResearchMind already knows. Before the LLM extracts anything, the ExtractorAgent calls `search_notes` on the memory MCP server to retrieve semantically similar prior knowledge.
+
+This retrieved context is injected directly into the LLM prompt — making every extraction RAG-augmented:
+
+```
+Page content  +  Retrieved memory  →  LLM  →  Grounded extraction
+```
+
+The result: contradictions are detected because the agent sees the conflicting prior claim. Patterns emerge because the agent recognizes the same entity appearing across sources. Without RAG, every page would be analyzed in isolation.
+
+The `basic-memory` MCP server handles semantic indexing and retrieval. Entity profiles are stored with consistent naming (`entity:{name}`) so they can be found across sessions.
+
+---
+
+## Guardrails
+
+`agents/guardrails.py` enforces safety and quality constraints at two points in the pipeline.
+
+### Input guardrails (before processing)
+
+| Check | What it does |
+|---|---|
+| Domain blocklist | Skips privacy-sensitive domains (banking, email, social media, auth pages) |
+| Minimum word count | Skips pages with fewer than 100 words — not enough signal |
+| Prompt injection stripping | Removes patterns like "ignore previous instructions" from page content before it reaches the LLM |
+| Text length cap | Truncates input to 8000 chars to prevent token overflow |
+
+### Output guardrails (after LLM extraction)
+
+| Check | What it does |
+|---|---|
+| Schema enforcement | Validates that entities, relationships, and insights match expected structure |
+| Type validation | Ensures entity types are one of: person, concept, claim, study, organization, date, place |
+| List size caps | Max 10 entities, 8 relationships, 6 insights per page |
+| Field length caps | All text fields capped at 500 chars |
+| Null safety | Replaces missing or non-string values with safe defaults |
+
+The server returns HTTP `422` for pages blocked by input guardrails, so the extension can log the skip reason without treating it as an error.
+
+---
+
+## Observability
+
+`agents/observability.py` provides structured logging, per-pipeline tracing, and metrics — all without any external service.
+
+### Structured logging
+Every log line is emitted as a JSON object with timestamp, level, logger name, and contextual fields. Easy to pipe into any log aggregator (Datadog, Loki, CloudWatch).
+
+```json
+{"ts": "2025-04-29T08:17:00Z", "level": "INFO", "logger": "researchmind.trace",
+ "msg": "[a3f1b2] ✓ pipeline complete",
+ "extra": {"trace_id": "a3f1b2", "total_ms": 1842, "entities": 8, "insights": 4}}
+```
+
+### Pipeline tracing
+Every page processing run gets a `trace_id`. Each agent stage is timed individually:
+
+```
+[a3f1b2] → ExtractorAgent        (started)
+[a3f1b2] → GraphAgent            (started)
+[a3f1b2] ✓ pipeline complete     total_ms=1842, stages=[{extractor: 1200ms}, {graph: 600ms}]
+```
+
+### Metrics endpoint
+`GET /metrics` returns live counters for the running server:
+
+```json
+{
+  "pages_processed": 42,
+  "pages_skipped": 3,
+  "pages_errored": 1,
+  "total_entities": 318,
+  "total_insights": 167,
+  "avg_pipeline_ms": 1640.2
+}
+```
+
+### HTTP request logging
+Every request to the agent server is logged with method, path, status code, and duration.
+
+---
+
 ## Tech Stack
 
 | Layer | Tech |
@@ -203,6 +296,9 @@ Coordinates the pipeline: ExtractorAgent → GraphAgent in sequence, then fires 
 | Agent framework | LangChain + LangGraph (Python) |
 | MCP integration | langchain-mcp-adapters |
 | MCP servers | basic-memory · @modelcontextprotocol/server-filesystem |
+| RAG retrieval | basic-memory semantic search (via MCP) |
+| Guardrails | agents/guardrails.py — input + output validation |
+| Observability | agents/observability.py — structured logs, traces, metrics |
 | LLM — local | Ollama (qwen3:8b, llama3.1, mistral, gemma2, phi3, and more) |
 | LLM — cloud | OpenAI GPT-4o/mini · Anthropic Claude Sonnet/Opus/Haiku |
 | API server | FastAPI + uvicorn |
@@ -317,6 +413,18 @@ Get keys here:
 4. Watch the knowledge graph populate in real time
 
 The extension processes pages silently. The dashboard updates as each page is analyzed.
+
+---
+
+### Monitor the pipeline
+
+```bash
+# Live metrics
+curl http://localhost:3738/metrics
+
+# Health + current LLM config
+curl http://localhost:3738/health
+```
 
 ---
 

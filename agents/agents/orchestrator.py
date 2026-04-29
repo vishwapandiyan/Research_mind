@@ -16,6 +16,7 @@ from datetime import datetime
 from agents.extractor import run_extractor
 from agents.graph_agent import run_graph_agent
 from agents.memory_agent import store as memory_store
+from guardrails import validate_page, validate_extraction, InputValidationError
 
 _semaphore = asyncio.Semaphore(3)
 
@@ -26,6 +27,13 @@ async def orchestrate(payload: dict) -> dict:
 
 
 async def _process(payload: dict) -> dict:
+    # ── Input guardrails ──────────────────────────────────────────────────────
+    try:
+        payload = validate_page(payload)
+    except InputValidationError as e:
+        print(f"[Orchestrator] ⛔ Skipped: {e}")
+        raise
+
     url = payload["url"]
     title = payload["title"]
     text = payload["textContent"]
@@ -39,6 +47,9 @@ async def _process(payload: dict) -> dict:
     # ReAct agent: searches memory → extracts → writes filesystem note → stores entities
     print("[Orchestrator] → ExtractorAgent (memory recall + extraction + persist)")
     extraction = await run_extractor(url, title, text, headings)
+
+    # ── Output guardrails ─────────────────────────────────────────────────────
+    extraction = validate_extraction(extraction)
 
     entities = extraction.get("entities", [])
     relationships = extraction.get("relationships", [])

@@ -22,6 +22,8 @@ from typing import Literal, Optional
 from agents.orchestrator import orchestrate
 from agents.synthesis_agent import run_synthesis_agent
 from llm import set_config, get_config
+from guardrails import InputValidationError
+from observability import log_requests, metrics
 
 
 @asynccontextmanager
@@ -40,6 +42,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.middleware("http")(log_requests)
 
 
 class PagePayload(BaseModel):
@@ -67,6 +70,12 @@ async def health():
     return {"ok": True, "agents": ["extractor", "memory", "graph", "synthesis"], **get_config()}
 
 
+@app.get("/metrics")
+async def get_metrics():
+    """Pipeline metrics — pages processed, entities extracted, error counts."""
+    return metrics.snapshot()
+
+
 @app.post("/config")
 async def config(payload: ConfigPayload):
     """Set LLM provider and API key at runtime — called from the extension popup."""
@@ -88,8 +97,17 @@ async def process_page(payload: PagePayload):
     """Process a single page through the agent pipeline."""
     try:
         result = await orchestrate(payload.model_dump())
+        metrics.record_success(
+            entities=len(result.get("entities", [])),
+            insights=len(result.get("insights", [])),
+            ms=0,
+        )
         return result
+    except InputValidationError as e:
+        metrics.record_skip(str(e))
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
+        metrics.record_error(str(e))
         print(f"[Agent Server] Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
